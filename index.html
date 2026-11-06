@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoQuiz - GeoJSON绘制器</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Leaflet.draw CSS & JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --card-bg: #ffffff;
+            --primary-color: #0284c7;
+            --primary-hover: #0369a1;
+            --accent-color: #e0f2fe;
+            --danger-color: #ef4444;
+            --border-color: #cbd5e1;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --radius-main: 12px;
+            --shadow-main: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* 顶栏 */
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: var(--card-bg);
+            border-radius: var(--radius-main);
+            box-shadow: var(--shadow-main);
+            margin-bottom: 12px;
+        }
+
+        .app-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: #ffffff;
+            border: none;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-outline:hover {
+            background-color: #f8fafc;
+        }
+
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 0.75rem;
+        }
+
+        .btn-danger {
+            background-color: transparent;
+            color: var(--danger-color);
+            border: none;
+            padding: 2px 4px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-danger:hover {
+            background-color: #fee2e2;
+        }
+
+        /* 主工作区：三栏布局 */
+        .main-layout {
+            display: flex;
+            gap: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--card-bg);
+            border-radius: var(--radius-main);
+            box-shadow: var(--shadow-main);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            background-color: #f8fafc;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-main);
+        }
+
+        /* 左侧：图层面板 */
+        .left-panel {
+            width: 290px;
+            flex-shrink: 0;
+        }
+
+        .group-toolbar {
+            padding: 8px 12px;
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tree-container {
+            overflow-y: auto;
+            flex: 1;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        /* 分组（文件夹）样式 */
+        .group-box {
+            border: 1px dashed transparent;
+            border-radius: 8px;
+            background: #f8fafc;
+            overflow: hidden;
+            transition: all 0.15s ease;
+            border: 1px solid var(--border-color);
+        }
+
+        .group-box.drag-over {
+            border: 2px dashed var(--primary-color) !important;
+            background-color: #f0f9ff !important;
+        }
+
+        .group-header {
+            padding: 8px 10px;
+            background-color: #e2e8f0;
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        .group-title-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .group-name-text {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        .group-name-text:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .group-content {
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-height: 24px;
+        }
+
+        .group-content.collapsed {
+            display: none;
+        }
+
+        /* 根目录投放区 */
+        .root-drop-zone {
+            min-height: 40px;
+            border: 1px dashed transparent;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 4px;
+        }
+
+        .root-drop-zone.drag-over {
+            border: 2px dashed var(--primary-color) !important;
+            background-color: #f0f9ff !important;
+        }
+
+        /* 图层项 (支持拖拽) */
+        .layer-item {
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.82rem;
+            transition: all 0.15s ease;
+            background: #ffffff;
+            gap: 6px;
+        }
+
+        .layer-item:active {
+            cursor: grabbing;
+        }
+
+        .layer-item.dragging {
+            opacity: 0.4;
+            border: 1px dashed var(--primary-color);
+        }
+
+        .layer-item:hover {
+            border-color: var(--primary-color);
+            background-color: var(--accent-color);
+        }
+
+        .layer-item.active {
+            border-color: var(--primary-color);
+            background-color: var(--accent-color);
+            font-weight: 600;
+        }
+
+        .layer-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .layer-name-span {
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex: 1;
+        }
+
+        .layer-name-span:hover {
+            background-color: rgba(2, 132, 199, 0.15);
+        }
+
+        .layer-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .layer-type-tag {
+            font-size: 0.7rem;
+            padding: 2px 5px;
+            border-radius: 4px;
+            background: #e2e8f0;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .inline-edit-input {
+            font-size: 0.82rem;
+            padding: 2px 6px;
+            border: 1.5px solid var(--primary-color);
+            border-radius: 4px;
+            outline: none;
+            width: 120px;
+            background: #ffffff;
+            box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+        }
+
+        /* 中间：地图面板 */
+        .center-panel {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 右侧：属性编辑与代码面板 */
+        .right-panel {
+            width: 320px;
+            flex-shrink: 0;
+        }
+
+        .editor-container {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            outline: none;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary-color);
+        }
+
+        textarea.code-editor {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.8rem;
+            background-color: #f8fafc;
+            resize: vertical;
+            min-height: 180px;
+            line-height: 1.4;
+            user-select: text;
+        }
+
+        .empty-tip {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 40px;
+        }
+
+        .leaflet-interactive {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶栏 -->
+    <header class="app-header">
+        <div class="app-title">
+            <span>🌏</span>
+            <span>GeoQuiz - GeoJSON绘制器</span>
+        </div>
+        <div class="header-actions">
+            <button id="copy-all-btn" class="btn btn-outline">复制全部 GeoJSON</button>
+            <button id="export-btn" class="btn">生成并导出文件</button>
+        </div>
+    </header>
+
+    <!-- 主布局 -->
+    <div class="main-layout">
+        <!-- 左侧：图层面板 -->
+        <div class="panel left-panel">
+            <div class="panel-header">
+                <span>图层面板</span>
+                <span id="layer-count" class="layer-type-tag">0 个图层</span>
+            </div>
+            
+            <div class="group-toolbar">
+                <button id="add-group-btn" class="btn btn-outline btn-sm">+ 新建分组</button>
+                <button id="clear-all-btn" class="btn btn-danger btn-sm">清空全部</button>
+            </div>
+
+            <div id="tree-container" class="tree-container">
+                <!-- 动态渲染树状结构 -->
+            </div>
+        </div>
+
+        <!-- 中间：地图面板 -->
+        <div class="panel center-panel">
+            <div id="map"></div>
+        </div>
+
+        <!-- 右侧：属性编辑与代码栏 -->
+        <div class="panel right-panel">
+            <div class="panel-header">
+                <span>要素属性编辑</span>
+                <span id="selected-type" class="layer-type-tag">未选择</span>
+            </div>
+            <div id="editor-container" class="editor-container">
+                <div class="empty-tip">请在地图上点击图形或在左侧选中图层进行编辑</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 初始化地图 ---
+        var map = L.map('map').setView([35.6762, 139.6503], 10);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        var groups = [];
+        var activeLayerId = null;
+        var draggedLayerId = null;
+
+        // --- 撤销 / 重做 (Undo/Redo) 历史记录系统 ---
+        var historyStack = [];
+        var historyIndex = -1;
+        var isRestoringHistory = false;
+
+        function saveHistoryState() {
+            if (isRestoringHistory) return;
+
+            var snapshot = {
+                groups: JSON.parse(JSON.stringify(groups)),
+                activeLayerId: activeLayerId,
+                features: []
+            };
+
+            drawnItems.eachLayer(function(layer) {
+                var geojson = layer.toGeoJSON();
+                geojson.properties = layer.feature ? layer.feature.properties : {};
+                snapshot.features.push(geojson);
+            });
+
+            if (historyIndex < historyStack.length - 1) {
+                historyStack = historyStack.slice(0, historyIndex + 1);
+            }
+
+            historyStack.push(snapshot);
+            historyIndex = historyStack.length - 1;
+        }
+
+        function restoreHistoryState(snapshot) {
+            isRestoringHistory = true;
+
+            drawnItems.clearLayers();
+            groups = JSON.parse(JSON.stringify(snapshot.groups));
+
+            snapshot.features.forEach(function(feat) {
+                var layer;
+                var geom = feat.geometry;
+
+                if (geom.type === 'Point') {
+                    layer = L.marker([geom.coordinates[1], geom.coordinates[0]]);
+                } else if (geom.type === 'LineString') {
+                    var latlngs = geom.coordinates.map(c => [c[1], c[0]]);
+                    layer = L.polyline(latlngs, { weight: 5 });
+                } else if (geom.type === 'Polygon') {
+                    var latlngs = geom.coordinates[0].map(c => [c[1], c[0]]);
+                    layer = L.polygon(latlngs);
+                }
+
+                if (layer) {
+                    layer.feature = { type: 'Feature', properties: feat.properties || {} };
+                    layer.on('click', function(evt) {
+                        L.DomEvent.stopPropagation(evt);
+                        selectLayer(layer);
+                    });
+                    drawnItems.addLayer(layer);
+                }
+            });
+
+            if (snapshot.activeLayerId && drawnItems.getLayer(snapshot.activeLayerId)) {
+                selectLayer(drawnItems.getLayer(snapshot.activeLayerId));
+            } else {
+                deselectAll();
+            }
+
+            renderTree();
+            isRestoringHistory = false;
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                restoreHistoryState(historyStack[historyIndex]);
+            }
+        }
+
+        function redo() {
+            if (historyIndex < historyStack.length - 1) {
+                historyIndex++;
+                restoreHistoryState(historyStack[historyIndex]);
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undo();
+            } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+                e.preventDefault();
+                redo();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
+                e.preventDefault();
+                if (activeLayerId) {
+                    var layer = drawnItems.getLayer(activeLayerId);
+                    if (layer) {
+                        var geojson = layer.toGeoJSON();
+                        geojson.properties = layer.feature.properties;
+                        navigator.clipboard.writeText(JSON.stringify(geojson, null, 2));
+                        deleteLayer(activeLayerId);
+                    }
+                }
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                if (activeLayerId) {
+                    deleteLayer(activeLayerId);
+                }
+            }
+        });
+
+        // --- 2. 初始化 Leaflet.Draw ---
+        var drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: { allowIntersection: false },
+                polyline: { shapeOptions: { weight: 5 } },
+                rectangle: true,
+                circle: false,
+                marker: true,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        function getGeometryType(layer) {
+            if (layer instanceof L.Polygon && !(layer instanceof L.Rectangle)) return '多边形';
+            if (layer instanceof L.Rectangle) return '矩形';
+            if (layer instanceof L.Polyline) return '折线';
+            if (layer instanceof L.Marker) return '标记点';
+            return '图层';
+        }
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            var layer = e.layer;
+            var typeName = getGeometryType(layer);
+
+            layer.feature = layer.feature || {
+                type: 'Feature',
+                properties: {
+                    name: typeName + ' ' + (drawnItems.getLayers().length + 1),
+                    description: '',
+                    groupId: ''
+                }
+            };
+
+            if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
+                layer.setStyle({ weight: 5 });
+            }
+
+            layer.on('click', function (evt) {
+                L.DomEvent.stopPropagation(evt);
+                selectLayer(layer);
+            });
+
+            drawnItems.addLayer(layer);
+            saveHistoryState();
+            renderTree();
+            selectLayer(layer);
+        });
+
+        map.on(L.Draw.Event.EDITED, function () {
+            saveHistoryState();
+            renderTree();
+            if (activeLayerId) {
+                var layer = drawnItems.getLayer(activeLayerId);
+                if (layer) renderRightPanel(layer);
+            }
+        });
+
+        map.on(L.Draw.Event.DELETED, function (e) {
+            e.layers.eachLayer(function (l) {
+                if (L.stamp(l) === activeLayerId) clearRightPanel();
+            });
+            saveHistoryState();
+            renderTree();
+        });
+
+        map.on('click', function () {
+            deselectAll();
+        });
+
+        function selectLayer(layer, skipRenderTree = false) {
+            deselectAll(false, false);
+            activeLayerId = L.stamp(layer);
+            if (layer.setStyle) {
+                layer.setStyle({ color: '#ef4444', weight: 4, fillOpacity: 0.5 });
+            }
+            if (!skipRenderTree) {
+                renderTree();
+            } else {
+                // 只更新 active 样式，不重建 DOM
+                document.querySelectorAll('.layer-item').forEach(el => {
+                    if (parseInt(el.dataset.stamp) === activeLayerId) {
+                        el.classList.add('active');
+                    } else {
+                        el.classList.remove('active');
+                    }
+                });
+            }
+            renderRightPanel(layer);
+        }
+
+        function deselectAll(clearRight = true, doRenderTree = true) {
+            drawnItems.eachLayer(function (l) {
+                if (l.setStyle) {
+                    l.setStyle({ color: '#0284c7', weight: 3, fillOpacity: 0.2 });
+                }
+            });
+            activeLayerId = null;
+            if (doRenderTree) renderTree();
+            if (clearRight) clearRightPanel();
+        }
+
+        function deleteLayer(stamp) {
+            var layer = drawnItems.getLayer(stamp);
+            if (layer) {
+                drawnItems.removeLayer(layer);
+                if (activeLayerId === stamp) clearRightPanel();
+                saveHistoryState();
+                renderTree();
+            }
+        }
+
+        // --- 3. 彻底解决：PS 风格内联改名 ---
+        function attachInlineEdit(element, currentText, onSave) {
+            element.addEventListener('dblclick', function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                var input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'inline-edit-input';
+                input.value = currentText;
+
+                element.replaceWith(input);
+                input.focus();
+                input.select();
+
+                var isCommitted = false;
+                function commit() {
+                    if (isCommitted) return;
+                    isCommitted = true;
+                    var newVal = input.value.trim();
+                    onSave(newVal ? newVal : currentText);
+                    saveHistoryState();
+                }
+
+                input.addEventListener('mousedown', function(ev) {
+                    ev.stopPropagation();
+                });
+                input.addEventListener('click', function(ev) {
+                    ev.stopPropagation();
+                });
+                input.addEventListener('blur', commit);
+                input.addEventListener('keydown', function (ev) {
+                    if (ev.key === 'Enter') {
+                        commit();
+                    } else if (ev.key === 'Escape') {
+                        isCommitted = true;
+                        renderTree();
+                    }
+                });
+            });
+        }
+
+        // --- 4. 渲染左侧图层面板 ---
+        function renderTree() {
+            var container = document.getElementById('tree-container');
+            container.innerHTML = '';
+
+            var allLayers = drawnItems.getLayers();
+            document.getElementById('layer-count').textContent = allLayers.length + ' 个图层';
+
+            // 1. 渲染分组
+            groups.forEach(function (grp) {
+                var groupLayers = allLayers.filter(l => l.feature.properties.groupId === grp.id);
+
+                var groupEl = document.createElement('div');
+                groupEl.className = 'group-box';
+                groupEl.dataset.groupId = grp.id;
+
+                groupEl.ondragover = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    groupEl.classList.add('drag-over');
+                };
+
+                groupEl.ondragleave = function (e) {
+                    e.stopPropagation();
+                    groupEl.classList.remove('drag-over');
+                };
+
+                groupEl.ondrop = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    groupEl.classList.remove('drag-over');
+
+                    if (draggedLayerId) {
+                        var layer = drawnItems.getLayer(draggedLayerId);
+                        if (layer) {
+                            layer.feature.properties.groupId = grp.id;
+                            saveHistoryState();
+                            renderTree();
+                            if (activeLayerId === draggedLayerId) {
+                                renderRightPanel(layer);
+                            }
+                        }
+                    }
+                };
+
+                var headerEl = document.createElement('div');
+                headerEl.className = 'group-header';
+
+                var titleWrapper = document.createElement('div');
+                titleWrapper.className = 'group-title-wrapper';
+                
+                var folderIcon = document.createElement('span');
+                folderIcon.textContent = grp.collapsed ? '📁' : '📂';
+                titleWrapper.appendChild(folderIcon);
+
+                var nameSpan = document.createElement('span');
+                nameSpan.className = 'group-name-text';
+                nameSpan.textContent = grp.name;
+                titleWrapper.appendChild(nameSpan);
+
+                attachInlineEdit(nameSpan, grp.name, function (newName) {
+                    grp.name = newName;
+                    renderTree();
+                    if (activeLayerId) {
+                        var activeLayer = drawnItems.getLayer(activeLayerId);
+                        if (activeLayer) renderRightPanel(activeLayer);
+                    }
+                });
+
+                titleWrapper.onclick = function (e) {
+                    if (e.target !== nameSpan && e.target.tagName !== 'INPUT') {
+                        grp.collapsed = !grp.collapsed;
+                        renderTree();
+                    }
+                };
+
+                var delBtn = document.createElement('button');
+                delBtn.className = 'btn-danger btn-sm';
+                delBtn.title = '删除分组';
+                delBtn.textContent = '🗑️';
+                delBtn.onclick = function (e) {
+                    e.stopPropagation();
+                    groupLayers.forEach(l => l.feature.properties.groupId = '');
+                    groups = groups.filter(g => g.id !== grp.id);
+                    saveHistoryState();
+                    renderTree();
+                    if (activeLayerId) {
+                        var activeLayer = drawnItems.getLayer(activeLayerId);
+                        if (activeLayer) renderRightPanel(activeLayer);
+                    }
+                };
+
+                headerEl.appendChild(titleWrapper);
+                headerEl.appendChild(delBtn);
+                groupEl.appendChild(headerEl);
+
+                var contentEl = document.createElement('div');
+                contentEl.className = 'group-content' + (grp.collapsed ? ' collapsed' : '');
+
+                if (groupLayers.length === 0) {
+                    contentEl.innerHTML = '<div style="font-size:0.75rem; color:#94a3b8; text-align:center; padding:4px;">把图层拖进来归类</div>';
+                } else {
+                    groupLayers.forEach(layer => appendLayerItem(contentEl, layer));
+                }
+
+                groupEl.appendChild(contentEl);
+                container.appendChild(groupEl);
+            });
+
+            // 2. 未分组投放区
+            var ungroupedLayers = allLayers.filter(l => !l.feature.properties.groupId);
+
+            var rootZone = document.createElement('div');
+            rootZone.className = 'root-drop-zone';
+
+            rootZone.ondragover = function (e) {
+                e.preventDefault();
+                rootZone.classList.add('drag-over');
+            };
+
+            rootZone.ondragleave = function () {
+                rootZone.classList.remove('drag-over');
+            };
+
+            rootZone.ondrop = function (e) {
+                e.preventDefault();
+                rootZone.classList.remove('drag-over');
+
+                if (draggedLayerId) {
+                    var layer = drawnItems.getLayer(draggedLayerId);
+                    if (layer) {
+                        layer.feature.properties.groupId = '';
+                        saveHistoryState();
+                        renderTree();
+                        if (activeLayerId === draggedLayerId) {
+                            renderRightPanel(layer);
+                        }
+                    }
+                }
+            };
+
+            ungroupedLayers.forEach(layer => appendLayerItem(rootZone, layer));
+            container.appendChild(rootZone);
+        }
+
+        function appendLayerItem(parentElement, layer) {
+            var stamp = L.stamp(layer);
+            var props = layer.feature.properties;
+            var typeName = getGeometryType(layer);
+
+            var itemEl = document.createElement('div');
+            itemEl.className = 'layer-item' + (stamp === activeLayerId ? ' active' : '');
+            itemEl.dataset.stamp = stamp;
+            itemEl.draggable = true;
+
+            itemEl.ondragstart = function (e) {
+                if (e.target.tagName === 'INPUT') {
+                    e.preventDefault();
+                    return;
+                }
+                e.stopPropagation();
+                draggedLayerId = stamp;
+                itemEl.classList.add('dragging');
+            };
+
+            itemEl.ondragend = function (e) {
+                e.stopPropagation();
+                draggedLayerId = null;
+                itemEl.classList.remove('dragging');
+            };
+
+            var infoEl = document.createElement('div');
+            infoEl.className = 'layer-info';
+
+            var typeTag = document.createElement('span');
+            typeTag.className = 'layer-type-tag';
+            typeTag.textContent = typeName;
+
+            var nameSpan = document.createElement('span');
+            nameSpan.className = 'layer-name-span';
+            nameSpan.textContent = props.name || '未命名';
+            nameSpan.title = '双击重命名';
+
+            attachInlineEdit(nameSpan, props.name || '', function (newName) {
+                props.name = newName;
+                renderTree();
+                if (activeLayerId === stamp) renderRightPanel(layer);
+            });
+
+            infoEl.appendChild(typeTag);
+            infoEl.appendChild(nameSpan);
+
+            itemEl.onclick = function (e) {
+                if (e.target.tagName === 'INPUT') return;
+                e.stopPropagation();
+                // 重点：在点击选中图层时，传入 skipRenderTree = true，避免单击销毁并重造 DOM 导致双击事件断裂！
+                selectLayer(layer, true);
+                if (layer.getBounds) {
+                    map.fitBounds(layer.getBounds(), { maxZoom: 15 });
+                } else if (layer.getLatLng) {
+                    map.panTo(layer.getLatLng());
+                }
+            };
+
+            var actionsEl = document.createElement('div');
+            actionsEl.className = 'layer-actions';
+
+            var delBtn = document.createElement('button');
+            delBtn.className = 'btn-danger btn-sm';
+            delBtn.title = '删除图层';
+            delBtn.textContent = '🗑️';
+            delBtn.onclick = function (e) {
+                e.stopPropagation();
+                deleteLayer(stamp);
+            };
+
+            actionsEl.appendChild(delBtn);
+
+            itemEl.appendChild(infoEl);
+            itemEl.appendChild(actionsEl);
+            parentElement.appendChild(itemEl);
+        }
+
+        // --- 5. 右侧属性面板 ---
+        function renderRightPanel(layer) {
+            var container = document.getElementById('editor-container');
+            var props = layer.feature.properties;
+            var geojson = layer.toGeoJSON();
+            geojson.properties = props;
+
+            document.getElementById('selected-type').textContent = getGeometryType(layer);
+
+            var groupOptions = `<option value="">未分组</option>` +
+                groups.map(g => `<option value="${g.id}" ${g.id === props.groupId ? 'selected' : ''}>${g.name}</option>`).join('');
+
+            container.innerHTML = `
+                <div class="form-group">
+                    <label>图层名称 (双击左侧名称也可改名):</label>
+                    <input type="text" id="edit-name" class="form-control" value="${props.name || ''}" placeholder="请输入图层名称">
+                </div>
+                <div class="form-group">
+                    <label>所属分组:</label>
+                    <select id="edit-group" class="form-control">
+                        ${groupOptions}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>描述/备注 (description):</label>
+                    <input type="text" id="edit-desc" class="form-control" value="${props.description || ''}" placeholder="请输入描述信息">
+                </div>
+                <div class="form-group">
+                    <label>当前要素代码 (GeoJSON):</label>
+                    <textarea id="edit-code" class="form-control code-editor" readonly>${JSON.stringify(geojson, null, 2)}</textarea>
+                </div>
+                <button id="right-del-btn" class="btn btn-danger" style="border:1px solid #fca5a5; margin-top:8px;">删除当前图层</button>
+            `;
+
+            document.getElementById('edit-name').oninput = function (e) {
+                props.name = e.target.value;
+                renderTree();
+                updateCodePreview(layer);
+            };
+
+            document.getElementById('edit-group').onchange = function (e) {
+                props.groupId = e.target.value;
+                saveHistoryState();
+                renderTree();
+                updateCodePreview(layer);
+            };
+
+            document.getElementById('edit-desc').oninput = function (e) {
+                props.description = e.target.value;
+                updateCodePreview(layer);
+            };
+
+            document.getElementById('right-del-btn').onclick = function () {
+                deleteLayer(L.stamp(layer));
+            };
+        }
+
+        function updateCodePreview(layer) {
+            var geojson = layer.toGeoJSON();
+            geojson.properties = layer.feature.properties;
+            document.getElementById('edit-code').value = JSON.stringify(geojson, null, 2);
+        }
+
+        function clearRightPanel() {
+            document.getElementById('selected-type').textContent = '未选择';
+            document.getElementById('editor-container').innerHTML = `
+                <div class="empty-tip">请在地图上点击图形或在左侧选中图层进行编辑</div>
+            `;
+        }
+
+        // 新建分组
+        document.getElementById('add-group-btn').onclick = function () {
+            var newGroup = {
+                id: 'grp_' + Date.now(),
+                name: '新建分组 ' + (groups.length + 1),
+                collapsed: false
+            };
+            groups.push(newGroup);
+            saveHistoryState();
+            renderTree();
+            if (activeLayerId) {
+                var activeLayer = drawnItems.getLayer(activeLayerId);
+                if (activeLayer) renderRightPanel(activeLayer);
+            }
+        };
+
+        // 清空全部
+        document.getElementById('clear-all-btn').onclick = function () {
+            if (drawnItems.getLayers().length === 0) return;
+            if (confirm('确定要清空地图上的所有图层吗？')) {
+                drawnItems.clearLayers();
+                clearRightPanel();
+                groups = [];
+                saveHistoryState();
+                renderTree();
+            }
+        };
+
+        // 复制全部 GeoJSON
+        document.getElementById('copy-all-btn').onclick = function () {
+            var allData = drawnItems.toGeoJSON();
+            if (allData.features.length === 0) {
+                alert('当前地图上没有任何图层！');
+                return;
+            }
+            navigator.clipboard.writeText(JSON.stringify(allData, null, 2)).then(function () {
+                alert('已成功复制整张地图的 GeoJSON 数据！');
+            });
+        };
+
+        // 导出文件
+        document.getElementById('export-btn').onclick = function () {
+            var allData = drawnItems.toGeoJSON();
+            if (allData.features.length === 0) {
+                alert('当前地图上没有任何图层！');
+                return;
+            }
+            var blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'geo_data.geojson';
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        // 初始化
+        saveHistoryState();
+        renderTree();
+    </script>
+</body>
+</html>
