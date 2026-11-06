@@ -467,6 +467,59 @@
         var activeLayerId = null;
         var draggedLayerId = null;
 
+        // --- 本地持久化存储 (LocalStorage) ---
+        function saveToLocalStorage() {
+            if (isRestoringHistory) return;
+            var snapshot = {
+                groups: groups,
+                features: []
+            };
+            drawnItems.eachLayer(function(layer) {
+                var geojson = layer.toGeoJSON();
+                geojson.properties = layer.feature ? layer.feature.properties : {};
+                snapshot.features.push(geojson);
+            });
+            localStorage.setItem('geoquiz_drawer_state', JSON.stringify(snapshot));
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                var raw = localStorage.getItem('geoquiz_drawer_state');
+                if (!raw) return false;
+                var snapshot = JSON.parse(raw);
+                if (!snapshot || !snapshot.features) return false;
+                
+                groups = snapshot.groups || [];
+                snapshot.features.forEach(function(feat) {
+                    var layer;
+                    var geom = feat.geometry;
+
+                    if (geom.type === 'Point') {
+                        layer = L.marker([geom.coordinates[1], geom.coordinates[0]]);
+                    } else if (geom.type === 'LineString') {
+                        var latlngs = geom.coordinates.map(c => [c[1], c[0]]);
+                        layer = L.polyline(latlngs, { weight: 5 });
+                    } else if (geom.type === 'Polygon') {
+                        var latlngs = geom.coordinates[0].map(c => [c[1], c[0]]);
+                        layer = L.polygon(latlngs);
+                    }
+
+                    if (layer) {
+                        layer.feature = { type: 'Feature', properties: feat.properties || {} };
+                        layer.on('click', function(evt) {
+                            L.DomEvent.stopPropagation(evt);
+                            selectLayer(layer);
+                        });
+                        drawnItems.addLayer(layer);
+                    }
+                });
+                return true;
+            } catch (e) {
+                console.error('读取本地存储失败:', e);
+                return false;
+            }
+        }
+
         // --- 撤销 / 重做 (Undo/Redo) 历史记录系统 ---
         var historyStack = [];
         var historyIndex = -1;
@@ -493,6 +546,9 @@
 
             historyStack.push(snapshot);
             historyIndex = historyStack.length - 1;
+
+            // 同时自动存入浏览器的 LocalStorage 防止刷新丢失
+            saveToLocalStorage();
         }
 
         function restoreHistoryState(snapshot) {
@@ -532,6 +588,7 @@
             }
 
             renderTree();
+            saveToLocalStorage();
             isRestoringHistory = false;
         }
 
@@ -659,7 +716,6 @@
             if (!skipRenderTree) {
                 renderTree();
             } else {
-                // 只更新 active 样式，不重建 DOM
                 document.querySelectorAll('.layer-item').forEach(el => {
                     if (parseInt(el.dataset.stamp) === activeLayerId) {
                         el.classList.add('active');
@@ -929,7 +985,6 @@
             itemEl.onclick = function (e) {
                 if (e.target.tagName === 'INPUT') return;
                 e.stopPropagation();
-                // 重点：在点击选中图层时，传入 skipRenderTree = true，避免单击销毁并重造 DOM 导致双击事件断裂！
                 selectLayer(layer, true);
                 if (layer.getBounds) {
                     map.fitBounds(layer.getBounds(), { maxZoom: 15 });
@@ -1083,9 +1138,26 @@
             URL.revokeObjectURL(url);
         };
 
-        // 初始化
-        saveHistoryState();
-        renderTree();
+        // 初始化：优先从 LocalStorage 恢复进度，如果没有则创建初始状态
+        var hasLoaded = loadFromLocalStorage();
+        if (hasLoaded) {
+            renderTree();
+            var initialSnapshot = {
+                groups: JSON.parse(JSON.stringify(groups)),
+                activeLayerId: null,
+                features: []
+            };
+            drawnItems.eachLayer(function(layer) {
+                var geojson = layer.toGeoJSON();
+                geojson.properties = layer.feature ? layer.feature.properties : {};
+                initialSnapshot.features.push(geojson);
+            });
+            historyStack.push(initialSnapshot);
+            historyIndex = 0;
+        } else {
+            saveHistoryState();
+            renderTree();
+        }
     </script>
 </body>
 </html>
